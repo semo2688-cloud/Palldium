@@ -11,9 +11,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel
 from typing import Optional
+
+_HTML_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
 
 from core import crawler, fetcher, extractor, exporter
 from core.crawler import PLATFORM_CRAWLERS, PLATFORM_TIERS, LIMITED_PLATFORMS
@@ -27,6 +29,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── HTML 서빙 ─────────────────────────────────────────────────────────────────
+
+@app.get("/")
+def root():
+    with open(_HTML_FILE, encoding="utf-8") as f:
+        return HTMLResponse(content=f.read())
 
 
 # ── Request Models ────────────────────────────────────────────────────────────
