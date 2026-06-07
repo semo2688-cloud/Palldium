@@ -2,7 +2,8 @@ import time
 import streamlit as st
 import config
 from core import crawler, fetcher, extractor, deduplicator, exporter
-from core.crawler import LIMITED_PLATFORMS
+from core.crawler import LIMITED_PLATFORMS, PLATFORM_TIERS
+from core.logger import load_recent_failures
 
 st.set_page_config(
     page_title="중고 에어컨 데이터 수집 도구",
@@ -10,13 +11,14 @@ st.set_page_config(
     layout="wide",
 )
 
-# ── Zone 1: Header ────────────────────────────────────────────────────────────
 st.title("중고 에어컨 데이터 수집 도구")
-st.caption("번개장터 · 중고나라 · 당근마켓 · 네이버 중고거래를 자동 크롤링하여 11개 항목을 추출합니다")
+st.caption("3단계 수집 파이프라인: 1차(API) → 2차(HTML) → 3차(Playwright/수동)")
 
-# ── Sidebar: Settings ─────────────────────────────────────────────────────────
+# ── Sidebar: API Keys ─────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("설정")
+
+    # Anthropic
     api_key_input = st.text_input(
         "Anthropic API 키",
         type="password",
@@ -26,134 +28,125 @@ with st.sidebar:
     effective_key = api_key_input.strip() or config.ANTHROPIC_API_KEY
 
     st.divider()
-    st.markdown("**네이버 카페 API 키** (선택)")
-    st.caption(
-        "[네이버 개발자센터](https://developers.naver.com)에서 무료 발급 "
-        "→ 애플리케이션 등록 → 검색 API 선택 → Client ID/Secret 복사"
-    )
+
+    # Naver — Tier 1
+    st.markdown("**네이버 카페 API** *(Tier 1 — 무료)*")
+    st.caption("developers.naver.com → 애플리케이션 등록 → 검색 API 선택")
     naver_client_id = st.text_input(
-        "Naver Client ID",
-        type="password",
-        value=config.NAVER_CLIENT_ID,
-        placeholder="네이버 Client ID",
+        "Naver Client ID", type="password",
+        value=config.NAVER_CLIENT_ID, placeholder="네이버 Client ID",
     )
     naver_client_secret = st.text_input(
-        "Naver Client Secret",
-        type="password",
-        value=config.NAVER_CLIENT_SECRET,
-        placeholder="네이버 Client Secret",
+        "Naver Client Secret", type="password",
+        value=config.NAVER_CLIENT_SECRET, placeholder="네이버 Client Secret",
     )
 
     st.divider()
-    st.markdown("**사용 방법**")
-    st.markdown(
-        "1. API 키 입력 (없으면 .env 사용)\n"
-        "2. 검색 키워드와 플랫폼 선택\n"
-        "3. 크롤링 시작 버튼 클릭\n"
-        "4. 결과 확인 후 다운로드"
+
+    # eBay — Tier 1
+    st.markdown("**eBay Browse API** *(Tier 1 — 무료)*")
+    st.caption("developer.ebay.com → My Keys → App ID / Cert ID 복사")
+    ebay_app_id = st.text_input(
+        "eBay App ID", type="password",
+        value=config.EBAY_APP_ID, placeholder="eBay App ID (Client ID)",
     )
+    ebay_cert_id = st.text_input(
+        "eBay Cert ID", type="password",
+        value=config.EBAY_CERT_ID, placeholder="eBay Cert ID (Client Secret)",
+    )
+
     st.divider()
-    st.caption("지원 플랫폼: 번개장터, 중고나라, 헬로마켓, 네이버 카페 중고나라, 당근마켓")
+    st.markdown(
+        "**플랫폼 티어 가이드**\n"
+        "- 🟢 Tier 1 — API 기반, 안정적\n"
+        "- 🟡 Tier 2 — HTML 스크래핑\n"
+        "- 🔴 Tier 3 — Playwright, 봇방지"
+    )
+    st.caption("권장: Tier 1·2 → 70–80%, Tier 3 → 10–20%")
 
 # ── Zone 2: Input Form ────────────────────────────────────────────────────────
+TIER_BADGE = {1: "🟢", 2: "🟡", 3: "🔴"}
+platform_options = list(crawler.PLATFORM_CRAWLERS.keys())
+platform_labels = {
+    p: f"{TIER_BADGE[PLATFORM_TIERS[p]]} {p}" for p in platform_options
+}
+
 with st.form("crawl_form"):
     col_kw, col_count = st.columns([3, 1])
     with col_kw:
         keyword = st.text_input(
             "검색 키워드",
             value="에어컨",
-            placeholder="예: 에어컨, LG 에어컨, 벽걸이 에어컨, 삼성 스탠드 에어컨",
+            placeholder="예: LG 에어컨, 벽걸이 에어컨, 삼성 스탠드 에어컨",
         )
     with col_count:
         per_limit = st.number_input(
             "플랫폼당 수집 수",
-            min_value=10,
-            max_value=300,
-            value=50,
-            step=10,
+            min_value=10, max_value=300, value=50, step=10,
             help="각 플랫폼에서 최대 몇 개의 상품을 수집할지 설정합니다",
         )
 
     platforms = st.multiselect(
         "크롤링할 플랫폼",
-        options=list(crawler.PLATFORM_CRAWLERS.keys()),
-        default=["중고나라", "헬로마켓"],
-        help="수집할 플랫폼을 선택하세요. 여러 개 선택 가능합니다.",
+        options=platform_options,
+        default=["eBay", "네이버 카페 중고나라", "중고나라", "헬로마켓"],
+        format_func=lambda p: platform_labels[p],
+        help="🟢 Tier 1(API) → 🟡 Tier 2(HTML) → 🔴 Tier 3(Playwright) 순으로 안정적입니다",
     )
 
-    # 봇 방지 플랫폼 / API 키 미설정 경고
+    # Tier 3 warning
     limited_selected = [p for p in (platforms or []) if p in LIMITED_PLATFORMS]
     if limited_selected:
         st.warning(
-            f"**{', '.join(limited_selected)}** 은(는) 봇 방지 시스템으로 인해 수집 결과가 없거나 제한될 수 있습니다. "
-            "**중고나라**, **헬로마켓** 은 안정적으로 동작합니다."
+            f"**{', '.join(limited_selected)}** 은(는) 봇 방지로 인해 결과가 제한될 수 있습니다. "
+            "Tier 1·2 플랫폼을 우선 사용하세요."
         )
+
+    # Missing API key hints
+    hints = []
+    if "eBay" in (platforms or []) and not (ebay_app_id.strip() and ebay_cert_id.strip()):
+        hints.append("**eBay**: 사이드바에 App ID / Cert ID 입력 필요 (developer.ebay.com 무료)")
     if "네이버 카페 중고나라" in (platforms or []) and not (naver_client_id.strip() and naver_client_secret.strip()):
-        st.info(
-            "**네이버 카페 중고나라**를 사용하려면 사이드바에 Naver Client ID / Secret을 입력하세요. "
-            "[네이버 개발자센터](https://developers.naver.com)에서 무료 발급 가능합니다."
-        )
+        hints.append("**네이버 카페 중고나라**: 사이드바에 Client ID / Secret 입력 필요 (developers.naver.com 무료)")
+    if hints:
+        st.info("\n\n".join(hints))
 
     custom_instruction = st.text_area(
         "추가 추출 지시사항 (선택 — Claude에게 전달됩니다)",
-        height=70,
+        height=60,
         placeholder="예: 냉방 BTU 수치가 있으면 비고에 포함해주세요",
     )
 
     submitted = st.form_submit_button("크롤링 시작", type="primary", use_container_width=True)
 
-# ── Zone 3 & 4: Processing + Results ─────────────────────────────────────────
-if submitted:
-    if not effective_key or effective_key == "your_key_here":
-        st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다. 사이드바에 API 키를 입력하거나 .env 파일을 확인하세요.")
-        st.stop()
+# ── Zone 2b: 수동 보완 (3차) ──────────────────────────────────────────────────
+with st.expander("🔧 수동 보완 루트 (3차) — URL 직접 입력"):
+    st.caption(
+        "봇 방지로 수집하지 못한 상품 URL을 직접 붙여넣으세요. "
+        "한 줄에 하나씩 입력하면 자동 크롤링 결과에 추가됩니다."
+    )
+    manual_urls_raw = st.text_area(
+        "상품 URL 목록",
+        height=120,
+        placeholder="https://bunjang.co.kr/products/12345\nhttps://www.daangn.com/articles/67890",
+    )
+    manual_submit = st.button("수동 URL 추가하여 수집", use_container_width=False)
 
-    if not platforms:
-        st.warning("플랫폼을 하나 이상 선택해주세요.")
-        st.stop()
+# ── Phase processing ──────────────────────────────────────────────────────────
+def _parse_manual_urls(raw: str) -> list[dict]:
+    items = []
+    for line in raw.splitlines():
+        url = line.strip()
+        if url.startswith("http"):
+            items.append({"출처_URL": url, "_platform": "수동입력", "_text": None})
+    return items
 
-    if not keyword.strip():
-        st.warning("검색 키워드를 입력해주세요.")
-        st.stop()
 
-    # ── Phase 1: Crawl search results ────────────────────────────────────────
-    st.info(f"'{keyword}' 키워드로 {len(platforms)}개 플랫폼에서 크롤링합니다. (플랫폼당 최대 {per_limit}개)")
-
-    phase1_bar = st.progress(0)
-    phase1_status = st.empty()
-    all_items: list[dict] = []
-
-    for pi, platform in enumerate(platforms):
-        phase1_status.text(f"[1/2] {platform} 검색 중...")
-        phase1_bar.progress((pi + 0.5) / len(platforms))
-
-        crawl_fn = crawler.PLATFORM_CRAWLERS.get(platform)
-        if crawl_fn is None:
-            continue
-        try:
-            if platform == "네이버 카페 중고나라":
-                items = crawl_fn(
-                    keyword.strip(), int(per_limit),
-                    client_id=naver_client_id.strip(),
-                    client_secret=naver_client_secret.strip(),
-                )
-            else:
-                items = crawl_fn(keyword.strip(), int(per_limit))
-            all_items.extend(items)
-        except Exception as e:
-            st.warning(f"{platform} 크롤링 중 오류: {e}")
-
-        phase1_bar.progress((pi + 1) / len(platforms))
-        time.sleep(0.5)
-
-    phase1_bar.progress(1.0)
-    phase1_status.text(f"[1/2] 완료 — 총 {len(all_items)}개 상품 발견")
-
+def _run_pipeline(all_items: list[dict], kw: str) -> None:
     if not all_items:
-        st.error("크롤링 결과가 없습니다. 키워드나 플랫폼을 바꿔보세요.")
-        st.stop()
+        st.error("수집된 상품이 없습니다.")
+        return
 
-    # ── Phase 2: Fetch + Claude extract ──────────────────────────────────────
     phase2_bar = st.progress(0)
     phase2_status = st.empty()
     records: list[dict] = []
@@ -162,9 +155,9 @@ if submitted:
     for i, item in enumerate(all_items):
         url = item["출처_URL"]
         platform = item.get("_platform") or fetcher.detect_platform(url)
-        page_text = item.get("_text")  # pre-fetched text from API (e.g., Bunjang)
+        page_text = item.get("_text")
 
-        phase2_status.text(f"[2/2] 추출 중: {i + 1}/{len(all_items)} — {platform} — {url[:55]}...")
+        phase2_status.text(f"[2/2] 추출 중: {i+1}/{len(all_items)} — {platform} — {url[:50]}...")
         phase2_bar.progress((i + 1) / len(all_items))
 
         try:
@@ -182,7 +175,6 @@ if submitted:
             if "error" in record:
                 failed.append(record)
             else:
-                # Merge pre-filled fields from crawler (only for null fields)
                 for key in config.COLUMNS:
                     if record.get(key) is None and key in item and not key.startswith("_"):
                         record[key] = item[key]
@@ -202,9 +194,88 @@ if submitted:
     st.session_state["results"] = records
     st.session_state["failed"] = failed
     st.session_state["removed"] = removed
-    st.session_state["keyword"] = keyword.strip()
+    st.session_state["keyword"] = kw
 
-# ── Render results from session state ────────────────────────────────────────
+
+if submitted:
+    if not effective_key or effective_key == "your_key_here":
+        st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+        st.stop()
+    if not platforms:
+        st.warning("플랫폼을 하나 이상 선택해주세요.")
+        st.stop()
+    if not keyword.strip():
+        st.warning("검색 키워드를 입력해주세요.")
+        st.stop()
+
+    st.info(f"'{keyword}' 키워드로 {len(platforms)}개 플랫폼에서 크롤링합니다. (플랫폼당 최대 {per_limit}개)")
+
+    # ── Phase 1: Crawl ────────────────────────────────────────────────────────
+    phase1_bar = st.progress(0)
+    phase1_status = st.empty()
+    all_items: list[dict] = []
+
+    for pi, platform in enumerate(platforms):
+        tier = PLATFORM_TIERS.get(platform, 2)
+        phase1_status.text(
+            f"[1/2] {TIER_BADGE[tier]} {platform} 검색 중..."
+        )
+        phase1_bar.progress((pi + 0.5) / len(platforms))
+
+        crawl_fn = crawler.PLATFORM_CRAWLERS.get(platform)
+        if crawl_fn is None:
+            continue
+        try:
+            if platform == "eBay":
+                items = crawl_fn(
+                    keyword.strip(), int(per_limit),
+                    app_id=ebay_app_id.strip(),
+                    cert_id=ebay_cert_id.strip(),
+                )
+            elif platform == "네이버 카페 중고나라":
+                items = crawl_fn(
+                    keyword.strip(), int(per_limit),
+                    client_id=naver_client_id.strip(),
+                    client_secret=naver_client_secret.strip(),
+                )
+            else:
+                items = crawl_fn(keyword.strip(), int(per_limit))
+            all_items.extend(items)
+        except Exception as e:
+            st.warning(f"{platform} 크롤링 중 오류: {e}")
+
+        phase1_bar.progress((pi + 1) / len(platforms))
+        time.sleep(0.5)
+
+    # append manual URLs if any
+    manual_items = _parse_manual_urls(manual_urls_raw or "")
+    if manual_items:
+        all_items.extend(manual_items)
+
+    phase1_bar.progress(1.0)
+    phase1_status.text(f"[1/2] 완료 — 총 {len(all_items)}개 상품 발견 (수동 {len(manual_items)}개 포함)")
+
+    _run_pipeline(all_items, keyword.strip())
+
+elif manual_submit and manual_urls_raw.strip():
+    if not effective_key or effective_key == "your_key_here":
+        st.error("ANTHROPIC_API_KEY가 설정되지 않았습니다.")
+        st.stop()
+    manual_items = _parse_manual_urls(manual_urls_raw)
+    if not manual_items:
+        st.warning("유효한 URL을 입력해주세요 (http로 시작).")
+    else:
+        st.info(f"수동 입력 URL {len(manual_items)}개를 처리합니다.")
+        # Keep existing results and append
+        existing = st.session_state.get("results", [])
+        _run_pipeline(manual_items, st.session_state.get("keyword", "수동"))
+        if existing:
+            merged = existing + st.session_state.get("results", [])
+            merged, removed = deduplicator.remove_duplicates(merged)
+            st.session_state["results"] = merged
+            st.session_state["removed"] = st.session_state.get("removed", 0) + removed
+
+# ── Render results ────────────────────────────────────────────────────────────
 if "results" in st.session_state:
     records = st.session_state["results"]
     failed = st.session_state["failed"]
@@ -220,7 +291,6 @@ if "results" in st.session_state:
 
     if records:
         import pandas as pd
-
         df = pd.DataFrame(records, columns=config.COLUMNS)
         st.dataframe(
             df,
@@ -252,10 +322,30 @@ if "results" in st.session_state:
                 use_container_width=True,
             )
     else:
-        st.warning("추출에 성공한 데이터가 없습니다. 실패 목록을 확인하세요.")
+        st.warning("추출에 성공한 데이터가 없습니다.")
 
     if failed:
         with st.expander(f"실패한 항목 {len(failed)}개 보기"):
             for f in failed:
                 st.write(f"- **{f.get('출처_URL', '알 수 없음')}**")
                 st.caption(f"  오류: {f.get('error', '알 수 없는 오류')}")
+
+# ── 실패 로그 뷰어 ─────────────────────────────────────────────────────────────
+st.divider()
+with st.expander("📋 실패 로그 보기 (logs/failures.jsonl)"):
+    failures = load_recent_failures(limit=50)
+    if not failures:
+        st.caption("기록된 실패 없음")
+    else:
+        import pandas as pd
+        df_fail = pd.DataFrame(failures)
+        # Count by platform
+        platform_counts = df_fail.groupby("platform").size().reset_index(name="실패 횟수")
+        st.markdown("**플랫폼별 실패 횟수**")
+        st.dataframe(platform_counts, use_container_width=True, hide_index=True)
+        st.markdown("**최근 실패 목록**")
+        st.dataframe(
+            df_fail[["ts", "platform", "query", "status_code", "error"]].tail(20),
+            use_container_width=True,
+            hide_index=True,
+        )

@@ -6,6 +6,8 @@ load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
+EBAY_APP_ID = os.getenv("EBAY_APP_ID", "")
+EBAY_CERT_ID = os.getenv("EBAY_CERT_ID", "")
 MODEL_NAME = "claude-3-5-haiku-20241022"
 MAX_TOKENS = 512
 RATE_LIMIT_DELAY_SEC = 1.5

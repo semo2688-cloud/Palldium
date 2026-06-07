@@ -8,3 +8,4 @@ venv/
 *.xlsx
 *.csv
 .DS_Store
+logs/
