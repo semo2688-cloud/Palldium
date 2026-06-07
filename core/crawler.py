@@ -588,7 +588,7 @@ def search_daangn(keyword: str, limit: int) -> list[dict]:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _to_int(val) -> int | None:
+def _to_int(val):
     if val is None:
         return None
     try:

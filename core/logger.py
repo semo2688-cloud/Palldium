@@ -1,6 +1,7 @@
 import json
 import os
 from datetime import datetime
+from typing import Optional
 
 _LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
 _FAILURE_LOG = os.path.join(_LOG_DIR, "failures.jsonl")
@@ -10,7 +11,7 @@ def log_failure(
     url: str,
     platform: str,
     query: str = "",
-    status_code: int | None = None,
+    status_code: Optional[int] = None,
     error: str = "",
 ) -> None:
     os.makedirs(_LOG_DIR, exist_ok=True)
