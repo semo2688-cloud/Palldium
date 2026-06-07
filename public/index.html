@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>중고 에어컨 데이터 수집</title>
+  <style>
+    :root {
+      --blue: #2563eb; --blue-light: #eff6ff; --blue-dark: #1d4ed8;
+      --green: #16a34a; --red: #dc2626; --yellow: #d97706;
+      --gray: #6b7280; --border: #e5e7eb; --bg: #f9fafb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: #111827; font-size: 14px; }
+
+    header { background: var(--blue); color: white; padding: 14px 24px; display: flex; align-items: center; gap: 10px; }
+    header h1 { font-size: 1.2rem; font-weight: 700; }
+    header p { font-size: 0.78rem; opacity: 0.8; margin-top: 2px; }
+
+    .layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; padding: 16px; max-width: 1400px; margin: 0 auto; }
+    @media (max-width: 860px) { .layout { grid-template-columns: 1fr; } }
+
+    .card { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .card-title { font-size: 0.72rem; font-weight: 700; color: var(--gray); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+
+    label { display: block; font-size: 0.82rem; font-weight: 500; margin-top: 10px; margin-bottom: 3px; }
+    label:first-of-type { margin-top: 0; }
+    input[type=text], input[type=password], input[type=number], textarea {
+      width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 0.85rem; outline: none;
+    }
+    input:focus, textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 2px #bfdbfe; }
+    textarea { resize: vertical; min-height: 60px; }
+
+    details { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin-top: 10px; }
+    details summary { cursor: pointer; font-size: 0.82rem; font-weight: 500; color: var(--gray); user-select: none; }
+    details[open] summary { margin-bottom: 8px; color: var(--blue); }
+
+    .platform-list { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+    .platform-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; transition: background 0.15s; }
+    .platform-item:hover { background: var(--blue-light); }
+    .platform-item input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--blue); flex-shrink: 0; }
+    .platform-name { flex: 1; font-size: 0.85rem; }
+    .badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 20px; font-weight: 700; }
+    .t1 { background: #dcfce7; color: #166534; }
+    .t2 { background: #fef9c3; color: #713f12; }
+    .t3 { background: #fee2e2; color: #991b1b; }
+
+    .btn { padding: 9px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 0.85rem; font-weight: 600; transition: background 0.15s; }
+    .btn-primary { background: var(--blue); color: white; width: 100%; padding: 11px; font-size: 0.95rem; margin-top: 12px; }
+    .btn-primary:hover { background: var(--blue-dark); }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-outline { background: #f3f4f6; color: #374151; border: 1px solid var(--border); }
+    .btn-outline:hover { background: #e5e7eb; }
+    .btn-green { background: var(--green); color: white; }
+    .btn-green:hover { background: #15803d; }
+
+    .progress-wrap { margin-top: 8px; }
+    .progress-label { font-size: 0.78rem; color: var(--gray); margin-bottom: 3px; display: flex; justify-content: space-between; }
+    .prog-bar-bg { background: #e5e7eb; border-radius: 9999px; height: 7px; overflow: hidden; }
+    .prog-bar { background: var(--blue); height: 100%; border-radius: 9999px; width: 0%; transition: width 0.25s; }
+
+    .stats { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .stat { flex: 1; min-width: 70px; text-align: center; padding: 9px 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+    .stat-val { font-size: 1.5rem; font-weight: 700; color: var(--blue); line-height: 1; }
+    .stat-lbl { font-size: 0.68rem; color: var(--gray); margin-top: 3px; }
+
+    .table-scroll { overflow-x: auto; max-height: 440px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+    thead th { position: sticky; top: 0; background: #f3f4f6; padding: 7px 9px; text-align: left; white-space: nowrap; border-bottom: 2px solid var(--border); font-weight: 600; }
+    tbody td { padding: 5px 9px; border-bottom: 1px solid #f3f4f6; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    tbody tr:hover td { background: var(--blue-light); }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .dl-row { display: flex; gap: 8px; margin-top: 10px; }
+    .dl-row .btn { flex: 1; }
+
+    .info-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 9px 11px; font-size: 0.8rem; color: #1e40af; line-height: 1.5; }
+    .warn-box { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 9px 11px; font-size: 0.8rem; color: #92400e; }
+
+    #status-msg { font-size: 0.8rem; color: var(--gray); margin-top: 7px; min-height: 1.1em; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>❄️ 중고 에어컨 데이터 수집 도구</h1>
+    <p>AI 가격 모델 학습용 · 3단계 파이프라인 (Tier1 API → Tier2 HTML → Tier3 수동)</p>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ── LEFT: Settings + Form ── -->
+  <div>
+
+    <!-- API Keys -->
+    <div class="card">
+      <div class="card-title">API 키 설정</div>
+
+      <label>Anthropic API 키 <span style="color:var(--red)">*</span></label>
+      <input type="password" id="anthropic-key" placeholder="sk-ant-...">
+
+      <details>
+        <summary>🟢 네이버 카페 API (Tier 1 · 무료)</summary>
+        <div style="font-size:0.76rem;color:var(--gray);margin-bottom:6px;">
+          <a href="https://developers.naver.com" target="_blank">developers.naver.com</a> → 애플리케이션 등록 → 검색 API 선택
+        </div>
+        <label>Client ID</label>
+        <input type="password" id="naver-id" placeholder="Naver Client ID">
+        <label>Client Secret</label>
+        <input type="password" id="naver-secret" placeholder="Naver Client Secret">
+      </details>
+
+      <details>
+        <summary>🟢 eBay Browse API (Tier 1 · 무료)</summary>
+        <div style="font-size:0.76rem;color:var(--gray);margin-bottom:6px;">
+          <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a> → My Keys → App ID / Cert ID
+        </div>
+        <label>App ID (Client ID)</label>
+        <input type="password" id="ebay-appid" placeholder="eBay App ID">
+        <label>Cert ID (Client Secret)</label>
+        <input type="password" id="ebay-certid" placeholder="eBay Cert ID">
+      </details>
+    </div>
+
+    <!-- Search Form -->
+    <div class="card">
+      <div class="card-title">수집 설정</div>
+
+      <label>검색 키워드</label>
+      <input type="text" id="keyword" value="에어컨" placeholder="예: LG 에어컨, 삼성 벽걸이">
+
+      <label>플랫폼당 수집 수</label>
+      <input type="number" id="per-limit" value="30" min="5" max="200">
+
+      <label>크롤링 플랫폼</label>
+      <div class="platform-list" id="platform-list">
+        <div style="color:var(--gray);padding:8px;">플랫폼 목록 로딩 중...</div>
+      </div>
+
+      <label style="margin-top:12px;">추가 추출 지시사항 <span style="font-weight:400;color:var(--gray)">(선택)</span></label>
+      <textarea id="custom-instruction" placeholder="예: 냉방 BTU 수치가 있으면 비고에 포함해주세요"></textarea>
+
+      <button class="btn btn-primary" id="start-btn" onclick="startCollection()">수집 시작</button>
+      <div id="status-msg"></div>
+    </div>
+
+    <!-- Manual URL input -->
+    <div class="card">
+      <div class="card-title">🔧 수동 보완 (Tier 3)</div>
+      <div style="font-size:0.8rem;color:var(--gray);margin-bottom:8px;">
+        봇 방지로 수집 못한 URL을 직접 붙여넣으세요 (한 줄에 하나씩).
+      </div>
+      <textarea id="manual-urls" placeholder="https://bunjang.co.kr/products/12345&#10;https://www.daangn.com/articles/67890" style="min-height:80px;"></textarea>
+      <button class="btn btn-outline" onclick="addManualUrls()" style="width:100%;margin-top:8px;">수동 URL 추가 처리</button>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT: Results ── -->
+  <div>
+
+    <!-- Progress -->
+    <div class="card hidden" id="progress-card">
+      <div class="card-title">진행 상황</div>
+      <div class="progress-wrap">
+        <div class="progress-label">
+          <span>1단계 · 크롤링</span>
+          <span id="p1-text">0 / 0</span>
+        </div>
+        <div class="prog-bar-bg"><div class="prog-bar" id="p1-bar"></div></div>
+      </div>
+      <div class="progress-wrap" style="margin-top:10px;">
+        <div class="progress-label">
+          <span>2단계 · AI 추출 (Claude)</span>
+          <span id="p2-text">0 / 0</span>
+        </div>
+        <div class="prog-bar-bg"><div class="prog-bar" id="p2-bar"></div></div>
+      </div>
+    </div>
+
+    <!-- Results table -->
+    <div class="card hidden" id="results-card">
+      <div class="card-title">수집 결과</div>
+      <div class="stats">
+        <div class="stat"><div class="stat-val" id="s-total">0</div><div class="stat-lbl">수집 완료</div></div>
+        <div class="stat"><div class="stat-val" id="s-failed" style="color:var(--red)">0</div><div class="stat-lbl">실패</div></div>
+        <div class="stat"><div class="stat-val" id="s-urls" style="color:var(--gray)">0</div><div class="stat-lbl">발견 URL</div></div>
+      </div>
+
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>플랫폼</th><th>브랜드</th><th>모델명</th><th>형태</th><th>연식</th>
+              <th>가격</th><th>상태</th><th>이미지</th><th>지역</th><th>출처</th><th>비고</th>
+            </tr>
+          </thead>
+          <tbody id="results-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="dl-row">
+        <button class="btn btn-green" onclick="downloadExcel()">📥 Excel (.xlsx)</button>
+        <button class="btn btn-outline" onclick="downloadCsv()">📥 CSV (.csv)</button>
+      </div>
+    </div>
+
+    <!-- Tier guide -->
+    <div class="card" id="guide-card">
+      <div class="card-title">플랫폼 티어 안내</div>
+      <div style="line-height:1.9;font-size:0.82rem;">
+        <div><span class="badge t1">Tier 1</span> &nbsp;API 기반 — 안정적, 권장 (eBay · 네이버 카페 중고나라)</div>
+        <div><span class="badge t2">Tier 2</span> &nbsp;HTML 스크래핑 — 비교적 안정 (중고나라 · 헬로마켓 · Carousell)</div>
+        <div><span class="badge t3">Tier 3</span> &nbsp;봇 방지 — 결과 제한적 (번개장터 · 당근마켓)</div>
+      </div>
+      <div class="info-box" style="margin-top:10px;">
+        💡 Vercel 환경에서는 Playwright(Tier 3)가 동작하지 않습니다.<br>
+        Tier 1·2를 우선 선택하고 Tier 3는 수동 보완 루트를 이용하세요.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const COLUMNS = ['플랫폼','브랜드','모델명','형태','연식','가격','상태','이미지_URL','지역','출처_URL','비고'];
+const TIER_CLASS = {1:'t1', 2:'t2', 3:'t3'};
+const TIER_LABEL = {1:'Tier 1', 2:'Tier 2', 3:'Tier 3'};
+const DEFAULT_ON = new Set(['eBay','네이버 카페 중고나라','중고나라','헬로마켓']);
+
+let allRecords = [];
+let failedCount = 0;
+let totalUrls = 0;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function loadPlatforms() {
+  try {
+    const res = await fetch('/api/platforms');
+    const data = await res.json();
+    const container = document.getElementById('platform-list');
+    container.innerHTML = data.platforms.map(p => `
+      <label class="platform-item">
+        <input type="checkbox" name="platform" value="${p.name}" ${DEFAULT_ON.has(p.name) ? 'checked' : ''}>
+        <span class="platform-name">${p.name}</span>
+        <span class="badge ${TIER_CLASS[p.tier]}">${TIER_LABEL[p.tier]}</span>
+      </label>
+    `).join('');
+  } catch(e) {
+    document.getElementById('platform-list').innerHTML =
+      '<div class="warn-box">플랫폼 목록 로드 실패 — 서버 연결을 확인하세요.</div>';
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+
+function getKeys() {
+  return {
+    anthropic: $('anthropic-key').value.trim(),
+    naver_id: $('naver-id').value.trim(),
+    naver_secret: $('naver-secret').value.trim(),
+    ebay_appid: $('ebay-appid').value.trim(),
+    ebay_certid: $('ebay-certid').value.trim(),
+  };
+}
+
+function setStatus(msg) { $('status-msg').textContent = msg; }
+
+function setProgress(phase, cur, total) {
+  const pct = total > 0 ? Math.round((cur / total) * 100) : 0;
+  $(`p${phase}-bar`).style.width = pct + '%';
+  $(`p${phase}-text`).textContent = `${cur} / ${total}`;
+}
+
+function updateStats() {
+  $('s-total').textContent = allRecords.length;
+  $('s-failed').textContent = failedCount;
+  $('s-urls').textContent = totalUrls;
+}
+
+function appendRow(record) {
+  const tr = document.createElement('tr');
+  tr.innerHTML = COLUMNS.map(col => {
+    const v = record[col] ?? '';
+    if (col === '이미지_URL' && v) return `<td><a href="${v}" target="_blank">🖼</a></td>`;
+    if (col === '출처_URL' && v) return `<td><a href="${v}" target="_blank">링크</a></td>`;
+    if (col === '가격' && v !== '') return `<td>${Number(v).toLocaleString()}원</td>`;
+    return `<td title="${v}">${v}</td>`;
+  }).join('');
+  $('results-tbody').appendChild(tr);
+}
+
+function parseManualUrls() {
+  return ($('manual-urls').value || '').split('\n')
+    .map(l => l.trim()).filter(l => l.startsWith('http'))
+    .map(url => ({'출처_URL': url, '_platform': '수동입력', '_text': null}));
+}
+
+// ── Main collection flow ──────────────────────────────────────────────────────
+async function startCollection() {
+  const keys = getKeys();
+  if (!keys.anthropic) { alert('Anthropic API 키를 입력하세요.'); return; }
+  const platforms = [...document.querySelectorAll('input[name=platform]:checked')].map(el => el.value);
+  if (!platforms.length) { alert('플랫폼을 하나 이상 선택하세요.'); return; }
+  const keyword = $('keyword').value.trim();
+  if (!keyword) { alert('검색 키워드를 입력하세요.'); return; }
+
+  const limit = parseInt($('per-limit').value) || 30;
+  const customInstruction = $('custom-instruction').value.trim();
+
+  // Reset
+  allRecords = []; failedCount = 0; totalUrls = 0;
+  $('results-tbody').innerHTML = '';
+  $('start-btn').disabled = true;
+  $('progress-card').classList.remove('hidden');
+  $('results-card').classList.add('hidden');
+
+  // Phase 1: Crawl
+  let crawlItems = [];
+  for (let i = 0; i < platforms.length; i++) {
+    const platform = platforms[i];
+    setStatus(`1단계: ${platform} 크롤링 중... (${i+1}/${platforms.length})`);
+    setProgress(1, i, platforms.length);
+    try {
+      const res = await fetch('/api/crawl', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          keyword, platform, limit,
+          naver_client_id: keys.naver_id,
+          naver_client_secret: keys.naver_secret,
+          ebay_app_id: keys.ebay_appid,
+          ebay_cert_id: keys.ebay_certid,
+        }),
+      });
+      const data = await res.json();
+      if (data.items) crawlItems = crawlItems.concat(data.items);
+    } catch(e) { console.error(`${platform} crawl:`, e); }
+    setProgress(1, i+1, platforms.length);
+  }
+
+  // Append manual URLs
+  const manualItems = parseManualUrls();
+  crawlItems = crawlItems.concat(manualItems);
+  totalUrls = crawlItems.length;
+
+  setStatus(`1단계 완료 — ${totalUrls}개 URL 발견. AI 추출 시작...`);
+  $('guide-card').classList.add('hidden');
+  $('results-card').classList.remove('hidden');
+  updateStats();
+
+  if (!crawlItems.length) {
+    setStatus('수집된 URL이 없습니다. 키워드나 플랫폼을 바꿔보세요.');
+    $('start-btn').disabled = false;
+    return;
+  }
+
+  // Phase 2: Extract
+  setProgress(2, 0, totalUrls);
+  for (let i = 0; i < crawlItems.length; i++) {
+    const item = crawlItems[i];
+    setStatus(`2단계: AI 추출 중... (${i+1}/${totalUrls}) — ${item['_platform']}`);
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          url: item['출처_URL'],
+          platform: item['_platform'] || '기타',
+          page_text: item['_text'] || null,
+          anthropic_api_key: keys.anthropic,
+          custom_instruction: customInstruction,
+        }),
+      });
+      const record = await res.json();
+      if (!record.error) {
+        // Merge pre-filled fields from crawler
+        for (const col of COLUMNS) {
+          if ((record[col] == null) && item[col] != null) record[col] = item[col];
+        }
+        allRecords.push(record);
+        appendRow(record);
+      } else {
+        failedCount++;
+      }
+    } catch(e) { failedCount++; console.error('extract:', e); }
+    setProgress(2, i+1, totalUrls);
+    updateStats();
+  }
+
+  setStatus(`완료! ${allRecords.length}개 수집, ${failedCount}개 실패.`);
+  $('start-btn').disabled = false;
+}
+
+// ── Manual URL processing ─────────────────────────────────────────────────────
+async function addManualUrls() {
+  const items = parseManualUrls();
+  if (!items.length) { alert('유효한 URL을 입력하세요 (http로 시작).'); return; }
+  const keys = getKeys();
+  if (!keys.anthropic) { alert('Anthropic API 키를 입력하세요.'); return; }
+  const customInstruction = $('custom-instruction').value.trim();
+
+  $('progress-card').classList.remove('hidden');
+  $('results-card').classList.remove('hidden');
+  totalUrls += items.length;
+  setProgress(2, 0, items.length);
+
+  for (let i = 0; i < items.length; i++) {
+    setStatus(`수동 URL 처리 중: ${i+1}/${items.length}`);
+    try {
+      const res = await fetch('/api/extract', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          url: items[i]['출처_URL'],
+          platform: '수동입력',
+          page_text: null,
+          anthropic_api_key: keys.anthropic,
+          custom_instruction: customInstruction,
+        }),
+      });
+      const record = await res.json();
+      if (!record.error) { allRecords.push(record); appendRow(record); }
+      else failedCount++;
+    } catch(e) { failedCount++; }
+    setProgress(2, i+1, items.length);
+    updateStats();
+  }
+  setStatus(`수동 URL ${items.length}개 처리 완료.`);
+}
+
+// ── Downloads ─────────────────────────────────────────────────────────────────
+async function downloadExcel() {
+  if (!allRecords.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+  try {
+    const res = await fetch('/api/export/excel', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({records: allRecords}),
+    });
+    triggerDownload(await res.blob(), '중고에어컨.xlsx');
+  } catch(e) { alert('Excel 다운로드 실패: ' + e); }
+}
+
+async function downloadCsv() {
+  if (!allRecords.length) { alert('다운로드할 데이터가 없습니다.'); return; }
+  try {
+    const res = await fetch('/api/export/csv', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({records: allRecords}),
+    });
+    triggerDownload(await res.blob(), '중고에어컨.csv');
+  } catch(e) { alert('CSV 다운로드 실패: ' + e); }
+}
+
+function triggerDownload(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// Init
+loadPlatforms();
+</script>
+</body>
+</html>
