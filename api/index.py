@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Optional
 
@@ -27,19 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ── HTML 서빙 ─────────────────────────────────────────────────────────────────
-
-_HTML_PATH = os.path.join(os.path.dirname(__file__), "..", "public", "index.html")
-
-
-@app.get("/")
-def root():
-    try:
-        with open(_HTML_PATH, encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-    except FileNotFoundError:
-        return HTMLResponse(content="<h1>index.html not found</h1>", status_code=500)
 
 
 # ── Request Models ────────────────────────────────────────────────────────────
